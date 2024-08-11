@@ -1,6 +1,9 @@
 import { initializeApi, submitProof, validateEnvVariables } from '../utils/helpers';
 import { generateAndNativelyVerifyProof } from '../common/generate-proof';
 import { handleTransaction } from '../utils/transactions';
+import ultraPlonkProof from './proof';
+import fs from 'fs';
+import path from 'path';
 
 const proofTypeToPallet: Record<string, string> = {
     groth16: "settlementGroth16Pallet",
@@ -24,17 +27,31 @@ const main = async (): Promise<void> => {
 
     try {
         console.log(`Generating the proof for ${proofType}`);
-        const { proof, publicSignals, vk } = await generateAndNativelyVerifyProof(proofType);
-        console.log(`${proofType} Proof generated and natively verified.`);
+        let proofParams;
+        let pallet;
+        if (proofType === 'ultraPlonk') {
+            const vk = fs.readFileSync(path.join(__dirname, './vk.bin')).toString('hex');
+            const hashVk = Uint8Array.from(Buffer.from(vk, 'hex'));;
+            proofParams = [
+                { 'Vk': hashVk },
+                ultraPlonkProof.proof,
+                ultraPlonkProof.verifyInputs,
+            ];
+            pallet = "settlementUltraplonkPallet";
+        } else {
+            let { proof, publicSignals, vk } = await generateAndNativelyVerifyProof(proofType);
+            console.log(`${proofType} Proof generated and natively verified.`);
+            vk = fs.readFileSync(path.join(__dirname, './vk.bin')).toString('hex');
+            const hashVk = Uint8Array.from(Buffer.from(vk, 'hex'));;
+            proofParams = [
+                { 'Vk': hashVk },
+                proof.proof,
+                proof.verifyInputs,
+            ];
+            pallet = proofTypeToPallet[proofType.trim()];
+        }
 
-        const proofParams = [
-            { 'Vk': vk },
-            proof,
-            publicSignals
-        ];
 
-
-        const pallet = proofTypeToPallet[proofType.trim()];
         const transaction = submitProof(api, pallet, proofParams);
 
         const startTime = Date.now();
